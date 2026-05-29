@@ -41,6 +41,7 @@ ${mode.prompts.output_format_header}
 
 <observation>
   <type>[ ${mode.observation_types.map(t => t.id).join(' | ')} ]</type>
+  <tool_name>COPY THE EXACT TOOL NAME FROM <what_happened> ABOVE, VERBATIM. e.g. Edit, Bash, Read, mcp__linear__get_issue, Skill. Do NOT classify or abbreviate.</tool_name>
   <!--
     ${mode.prompts.type_guidance}
   -->
@@ -109,7 +110,8 @@ export function buildObservationPrompt(obs: Observation): string {
 
 Return either one or more <observation>...</observation> blocks, or an empty response if this tool use should be skipped.
 Concrete debugging findings from logs, queue state, database rows, session routing, or code-path inspection count as durable discoveries and should be recorded.
-Never reply with prose such as "Skipping", "No substantive tool executions", or any explanation outside XML. Non-XML text is discarded.`;
+Never reply with prose such as "Skipping", "No substantive tool executions", or any explanation outside XML. Non-XML text is discarded.
+• <tool_name> MUST be the verbatim tool identifier from <what_happened>; never invent, classify, or omit it.`;
 }
 
 export function buildSummaryPrompt(session: SDKSession, mode: ModeConfig): string {
@@ -170,6 +172,7 @@ ${mode.prompts.output_format_header}
 
 <observation>
   <type>[ ${mode.observation_types.map(t => t.id).join(' | ')} ]</type>
+  <tool_name>COPY THE EXACT TOOL NAME FROM <what_happened> ABOVE, VERBATIM. e.g. Edit, Bash, Read, mcp__linear__get_issue, Skill. Do NOT classify or abbreviate.</tool_name>
   <!--
     ${mode.prompts.type_guidance}
   -->
