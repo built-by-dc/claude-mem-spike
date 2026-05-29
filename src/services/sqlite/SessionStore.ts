@@ -1922,6 +1922,7 @@ export class SessionStore {
       files_modified: string[];
       agent_type?: string | null;
       agent_id?: string | null;
+      metadata?: string | null;
     }>,
     summary: {
       request: string;
@@ -1946,8 +1947,8 @@ export class SessionStore {
         INSERT INTO observations
         (memory_session_id, project, type, title, subtitle, facts, narrative, concepts,
          files_read, files_modified, prompt_number, discovery_tokens, agent_type, agent_id, content_hash, created_at, created_at_epoch,
-         generated_by_model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         generated_by_model, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(memory_session_id, content_hash) DO NOTHING
         RETURNING id
       `);
@@ -1975,7 +1976,8 @@ export class SessionStore {
           contentHash,
           timestampIso,
           timestampEpoch,
-          generatedByModel || null
+          generatedByModel || null,
+          observation.metadata ?? null
         ) as { id: number } | null;
 
         if (inserted) {

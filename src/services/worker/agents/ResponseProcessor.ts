@@ -68,11 +68,44 @@ export async function processAgentResponse(
     memorySessionId: session.memorySessionId
   });
 
-  const labeledObservations = observations.map(obs => ({
-    ...obs,
-    agent_type: session.pendingAgentType ?? null,
-    agent_id: session.pendingAgentId ?? null
-  }));
+  const labeledObservations = observations.map(obs => {
+    const labeled: typeof obs & {
+      agent_type: string | null;
+      agent_id: string | null;
+      metadata?: string | null;
+    } = {
+      ...obs,
+      agent_type: session.pendingAgentType ?? null,
+      agent_id: session.pendingAgentId ?? null
+    };
+
+    // Persist tool_name into the observations.metadata JSON column so the
+    // downstream footprint pipeline can read metadata.tool_name (no schema
+    // migration — reuse the existing metadata column). Merge rather than
+    // clobber if metadata is already present on the observation.
+    if (obs.tool_name) {
+      const existingMetadata =
+        typeof (obs as { metadata?: unknown }).metadata === 'string'
+          ? (obs as { metadata?: string }).metadata
+          : null;
+      let merged: Record<string, unknown> = {};
+      if (existingMetadata) {
+        try {
+          const parsed = JSON.parse(existingMetadata);
+          if (parsed && typeof parsed === 'object') {
+            merged = parsed as Record<string, unknown>;
+          }
+        } catch {
+          // Existing metadata is not valid JSON; start fresh rather than drop tool_name.
+          merged = {};
+        }
+      }
+      merged.tool_name = obs.tool_name;
+      labeled.metadata = JSON.stringify(merged);
+    }
+
+    return labeled;
+  });
 
   let result: ReturnType<typeof sessionStore.storeObservations>;
   try {

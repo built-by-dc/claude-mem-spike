@@ -537,11 +537,11 @@ ${o.stack}`:` ${o.message}`;else if(this.getLevel()===0&&typeof o=="object")try{
         INSERT INTO observations
         (memory_session_id, project, type, title, subtitle, facts, narrative, concepts,
          files_read, files_modified, prompt_number, discovery_tokens, agent_type, agent_id, content_hash, created_at, created_at_epoch,
-         generated_by_model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         generated_by_model, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(memory_session_id, content_hash) DO NOTHING
         RETURNING id
-      `),f=this.db.prepare("SELECT id FROM observations WHERE memory_session_id = ? AND content_hash = ?");for(let l of s){let A=W(e,l.title,l.narrative),h=E.get(e,t,l.type,l.title,l.subtitle,JSON.stringify(l.facts),l.narrative,JSON.stringify(l.concepts),JSON.stringify(l.files_read),JSON.stringify(l.files_modified),o||null,i,l.agent_type??null,l.agent_id??null,A,m,c,d||null);if(h){p.push(h.id);continue}let S=f.get(e,A);if(!S)throw new Error(`storeObservations: ON CONFLICT without existing row for content_hash=${A}`);p.push(S.id)}let b=null;if(n){let A=this.db.prepare(`
+      `),f=this.db.prepare("SELECT id FROM observations WHERE memory_session_id = ? AND content_hash = ?");for(let l of s){let A=W(e,l.title,l.narrative),h=E.get(e,t,l.type,l.title,l.subtitle,JSON.stringify(l.facts),l.narrative,JSON.stringify(l.concepts),JSON.stringify(l.files_read),JSON.stringify(l.files_modified),o||null,i,l.agent_type??null,l.agent_id??null,A,m,c,d||null,l.metadata??null);if(h){p.push(h.id);continue}let S=f.get(e,A);if(!S)throw new Error(`storeObservations: ON CONFLICT without existing row for content_hash=${A}`);p.push(S.id)}let b=null;if(n){let A=this.db.prepare(`
           INSERT INTO session_summaries
           (memory_session_id, project, request, investigated, learned, completed,
            next_steps, notes, prompt_number, discovery_tokens, created_at, created_at_epoch)
