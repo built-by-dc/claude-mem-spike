@@ -111,6 +111,7 @@ export async function processAgentResponse(
   try {
     result = sessionStore.storeObservations(
       session.memorySessionId,
+      session.contentSessionId,
       session.project,
       labeledObservations,
       summaryForStore,

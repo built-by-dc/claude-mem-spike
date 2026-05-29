@@ -100,4 +100,51 @@ describe('SessionStore', () => {
     expect(stored).not.toBeNull();
     expect(stored?.created_at_epoch).toBe(pastTimestamp);
   });
+
+  it('stamps content_session_id on observations and summaries (survives msid remap)', () => {
+    const contentId = 'content-sess-stamp';
+    const memoryId = 'memory-sess-stamp';
+    const sdkId = store.createSDKSession(contentId, 'test-project', 'initial prompt');
+    store.updateMemorySessionId(sdkId, memoryId);
+
+    const obs = {
+      type: 'discovery',
+      title: 'Stamped Obs',
+      subtitle: null,
+      facts: [],
+      narrative: 'Testing stamp',
+      concepts: [],
+      files_read: [],
+      files_modified: []
+    };
+    const summary = {
+      request: 'Req',
+      investigated: 'Inv',
+      learned: 'Learn',
+      completed: 'Done',
+      next_steps: 'Next',
+      notes: null
+    };
+
+    const result = store.storeObservations(
+      memoryId,
+      contentId,
+      'test-project',
+      [obs],
+      summary
+    );
+
+    // Access the underlying db to assert the column was populated.
+    const db = (store as unknown as { db: { query: (sql: string) => { get: (...args: unknown[]) => unknown } } }).db;
+
+    const obsRow = db
+      .query('SELECT content_session_id FROM observations WHERE id = ?')
+      .get(result.observationIds[0]) as { content_session_id: string } | null;
+    expect(obsRow?.content_session_id).toBe(contentId);
+
+    const sumRow = db
+      .query('SELECT content_session_id FROM session_summaries WHERE id = ?')
+      .get(result.summaryId) as { content_session_id: string } | null;
+    expect(sumRow?.content_session_id).toBe(contentId);
+  });
 });

@@ -57,6 +57,7 @@ CREATE INDEX IF NOT EXISTS idx_sdk_sessions_platform_source  ON sdk_sessions(pla
 CREATE TABLE IF NOT EXISTS observations (
   id                   INTEGER PRIMARY KEY AUTOINCREMENT,
   memory_session_id    TEXT    NOT NULL,
+  content_session_id   TEXT,
   project              TEXT    NOT NULL,
   text                 TEXT,
   type                 TEXT    NOT NULL,
@@ -89,6 +90,7 @@ CREATE INDEX IF NOT EXISTS idx_observations_content_hash ON observations(content
 CREATE INDEX IF NOT EXISTS idx_observations_agent_type   ON observations(agent_type);
 CREATE INDEX IF NOT EXISTS idx_observations_agent_id     ON observations(agent_id);
 CREATE INDEX IF NOT EXISTS idx_observations_merged_into  ON observations(merged_into_project);
+CREATE INDEX IF NOT EXISTS idx_observations_content_session ON observations(content_session_id);
 
 -- ─────────────────────────────────────────────────────────────────────
 -- session_summaries: one summary row per memory session.
@@ -96,6 +98,7 @@ CREATE INDEX IF NOT EXISTS idx_observations_merged_into  ON observations(merged_
 CREATE TABLE IF NOT EXISTS session_summaries (
   id                   INTEGER PRIMARY KEY AUTOINCREMENT,
   memory_session_id    TEXT    NOT NULL,
+  content_session_id   TEXT,
   project              TEXT    NOT NULL,
   request              TEXT,
   investigated         TEXT,
@@ -117,6 +120,7 @@ CREATE INDEX IF NOT EXISTS idx_session_summaries_sdk_session  ON session_summari
 CREATE INDEX IF NOT EXISTS idx_session_summaries_project      ON session_summaries(project);
 CREATE INDEX IF NOT EXISTS idx_session_summaries_created      ON session_summaries(created_at_epoch DESC);
 CREATE INDEX IF NOT EXISTS idx_summaries_merged_into          ON session_summaries(merged_into_project);
+CREATE INDEX IF NOT EXISTS idx_summaries_content_session      ON session_summaries(content_session_id);
 
 -- ─────────────────────────────────────────────────────────────────────
 -- pending_messages: persistent work queue for SDK messages.

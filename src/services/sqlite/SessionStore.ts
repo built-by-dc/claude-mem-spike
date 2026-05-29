@@ -71,6 +71,29 @@ export class SessionStore {
     this.dropDeadPendingMessagesColumns();
     this.ensurePendingMessagesToolUseIdColumn();
     this.dropWorkerPidColumn();
+    this.ensureContentSessionIdColumns();
+  }
+
+  private ensureContentSessionIdColumns(): void {
+    const obsCols = this.db
+      .query('PRAGMA table_info(observations)')
+      .all() as TableColumnInfo[];
+    if (!obsCols.some(c => c.name === 'content_session_id')) {
+      this.db.run('ALTER TABLE observations ADD COLUMN content_session_id TEXT');
+    }
+    this.db.run(
+      'CREATE INDEX IF NOT EXISTS idx_observations_content_session ON observations(content_session_id)'
+    );
+
+    const sumCols = this.db
+      .query('PRAGMA table_info(session_summaries)')
+      .all() as TableColumnInfo[];
+    if (!sumCols.some(c => c.name === 'content_session_id')) {
+      this.db.run('ALTER TABLE session_summaries ADD COLUMN content_session_id TEXT');
+    }
+    this.db.run(
+      'CREATE INDEX IF NOT EXISTS idx_summaries_content_session ON session_summaries(content_session_id)'
+    );
   }
 
   private dropWorkerPidColumn(): void {
@@ -1807,7 +1830,8 @@ export class SessionStore {
     promptNumber?: number,
     discoveryTokens: number = 0,
     overrideTimestampEpoch?: number,
-    generatedByModel?: string
+    generatedByModel?: string,
+    contentSessionId: string | null = null
   ): { id: number; createdAtEpoch: number } {
     const timestampEpoch = overrideTimestampEpoch ?? Date.now();
     const timestampIso = new Date(timestampEpoch).toISOString();
@@ -1816,16 +1840,17 @@ export class SessionStore {
 
     const stmt = this.db.prepare(`
       INSERT INTO observations
-      (memory_session_id, project, type, title, subtitle, facts, narrative, concepts,
+      (memory_session_id, content_session_id, project, type, title, subtitle, facts, narrative, concepts,
        files_read, files_modified, prompt_number, discovery_tokens, agent_type, agent_id, content_hash, created_at, created_at_epoch,
        generated_by_model, metadata)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(memory_session_id, content_hash) DO NOTHING
       RETURNING id, created_at_epoch
     `);
 
     const inserted = stmt.get(
       memorySessionId,
+      contentSessionId,
       project,
       observation.type,
       observation.title,
@@ -1875,20 +1900,22 @@ export class SessionStore {
     },
     promptNumber?: number,
     discoveryTokens: number = 0,
-    overrideTimestampEpoch?: number
+    overrideTimestampEpoch?: number,
+    contentSessionId: string | null = null
   ): { id: number; createdAtEpoch: number } {
     const timestampEpoch = overrideTimestampEpoch ?? Date.now();
     const timestampIso = new Date(timestampEpoch).toISOString();
 
     const stmt = this.db.prepare(`
       INSERT INTO session_summaries
-      (memory_session_id, project, request, investigated, learned, completed,
+      (memory_session_id, content_session_id, project, request, investigated, learned, completed,
        next_steps, notes, prompt_number, discovery_tokens, created_at, created_at_epoch)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `);
 
     const result = stmt.run(
       memorySessionId,
+      contentSessionId,
       project,
       summary.request,
       summary.investigated,
@@ -1910,6 +1937,7 @@ export class SessionStore {
 
   storeObservations(
     memorySessionId: string,
+    contentSessionId: string,
     project: string,
     observations: Array<{
       type: string;
@@ -1945,10 +1973,10 @@ export class SessionStore {
 
       const obsStmt = this.db.prepare(`
         INSERT INTO observations
-        (memory_session_id, project, type, title, subtitle, facts, narrative, concepts,
+        (memory_session_id, content_session_id, project, type, title, subtitle, facts, narrative, concepts,
          files_read, files_modified, prompt_number, discovery_tokens, agent_type, agent_id, content_hash, created_at, created_at_epoch,
          generated_by_model, metadata)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(memory_session_id, content_hash) DO NOTHING
         RETURNING id
       `);
@@ -1960,6 +1988,7 @@ export class SessionStore {
         const contentHash = computeObservationContentHash(memorySessionId, observation.title, observation.narrative);
         const inserted = obsStmt.get(
           memorySessionId,
+          contentSessionId,
           project,
           observation.type,
           observation.title,
@@ -1998,13 +2027,14 @@ export class SessionStore {
       if (summary) {
         const summaryStmt = this.db.prepare(`
           INSERT INTO session_summaries
-          (memory_session_id, project, request, investigated, learned, completed,
+          (memory_session_id, content_session_id, project, request, investigated, learned, completed,
            next_steps, notes, prompt_number, discovery_tokens, created_at, created_at_epoch)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = summaryStmt.run(
           memorySessionId,
+          contentSessionId,
           project,
           summary.request,
           summary.investigated,
@@ -2054,7 +2084,8 @@ export class SessionStore {
     promptNumber?: number,
     discoveryTokens: number = 0,
     overrideTimestampEpoch?: number,
-    generatedByModel?: string
+    generatedByModel?: string,
+    contentSessionId: string | null = null
   ): { observationIds: number[]; summaryId?: number; createdAtEpoch: number } {
     const timestampEpoch = overrideTimestampEpoch ?? Date.now();
     const timestampIso = new Date(timestampEpoch).toISOString();
@@ -2064,10 +2095,10 @@ export class SessionStore {
 
       const obsStmt = this.db.prepare(`
         INSERT INTO observations
-        (memory_session_id, project, type, title, subtitle, facts, narrative, concepts,
+        (memory_session_id, content_session_id, project, type, title, subtitle, facts, narrative, concepts,
          files_read, files_modified, prompt_number, discovery_tokens, agent_type, agent_id, content_hash, created_at, created_at_epoch,
          generated_by_model)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON CONFLICT(memory_session_id, content_hash) DO NOTHING
         RETURNING id
       `);
@@ -2079,6 +2110,7 @@ export class SessionStore {
         const contentHash = computeObservationContentHash(memorySessionId, observation.title, observation.narrative);
         const inserted = obsStmt.get(
           memorySessionId,
+          contentSessionId,
           project,
           observation.type,
           observation.title,
@@ -2116,13 +2148,14 @@ export class SessionStore {
       if (summary) {
         const summaryStmt = this.db.prepare(`
           INSERT INTO session_summaries
-          (memory_session_id, project, request, investigated, learned, completed,
+          (memory_session_id, content_session_id, project, request, investigated, learned, completed,
            next_steps, notes, prompt_number, discovery_tokens, created_at, created_at_epoch)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         `);
 
         const result = summaryStmt.run(
           memorySessionId,
+          contentSessionId,
           project,
           summary.request,
           summary.investigated,
