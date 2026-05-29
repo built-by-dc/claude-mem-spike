@@ -56,8 +56,36 @@ interface CoworkResolution {
   stateFilePath: string;
 }
 
+/**
+ * Look up a cowork space's display name by id in the sibling spaces.json.
+ * The space name is what the user sees and may differ from the folder basename
+ * (renamed/duplicated space, e.g. "test my project bro 2"). Tolerant of the
+ * file's shape: array, {spaces:[...]}, or id-keyed dict — recursively finds an
+ * object whose id/uuid === spaceId and returns its trimmed `name`.
+ */
+function lookupSpaceName(envDir: string, spaceId: string): string | undefined {
+  try {
+    const data = JSON.parse(fs.readFileSync(path.join(envDir, 'spaces.json'), 'utf8'));
+    let found: string | undefined;
+    const visit = (o: unknown): void => {
+      if (found || !o || typeof o !== 'object') return;
+      if (Array.isArray(o)) { o.forEach(visit); return; }
+      const rec = o as Record<string, unknown>;
+      if ((rec.id === spaceId || rec.uuid === spaceId) && typeof rec.name === 'string' && rec.name.trim()) {
+        found = rec.name.trim();
+        return;
+      }
+      for (const v of Object.values(rec)) visit(v);
+    };
+    visit(data);
+    return found;
+  } catch {
+    return undefined;
+  }
+}
+
 function resolveCoworkProject(cwd: string): CoworkResolution | null {
-  const match = COWORK_REGEX.exec(cwd);
+  const match = cwd.match(COWORK_REGEX);
   if (!match) return null;
 
   const sessionPrefix = match[1]; // e.g. …/local_<u3>
@@ -67,14 +95,28 @@ function resolveCoworkProject(cwd: string): CoworkResolution | null {
     const raw = fs.readFileSync(stateFilePath, 'utf8');
     const state = JSON.parse(raw) as Record<string, unknown>;
 
+    // Prefer the cowork space display name (spaces.json) — what the user sees,
+    // and the source of truth when a space is renamed away from its folder name.
+    const spaceId = typeof state['spaceId'] === 'string' ? (state['spaceId'] as string) : undefined;
+    if (spaceId) {
+      const spaceName = lookupSpaceName(path.dirname(stateFilePath), spaceId);
+      if (spaceName) {
+        logger.info('PROJECT_NAME', 'Resolved cowork project from spaces.json space name', {
+          stateFilePath, spaceId, projectName: spaceName,
+        });
+        return { projectName: spaceName, stateFilePath };
+      }
+    }
+
+    // Fallback: selected-folder basename.
     const folders = state['userSelectedFolders'];
     if (!Array.isArray(folders) || folders.length === 0) {
-      logger.debug('PROJECT_NAME', 'Cowork state file has no userSelectedFolders, falling back', { stateFilePath });
+      logger.debug('PROJECT_NAME', 'Cowork state file has no space name or userSelectedFolders, falling back', { stateFilePath });
       return null;
     }
 
     const projectName = path.basename(String(folders[0]));
-    logger.info('PROJECT_NAME', 'Resolved cowork project from userSelectedFolders', {
+    logger.info('PROJECT_NAME', 'Resolved cowork project from userSelectedFolders (no space name)', {
       stateFilePath,
       folder: folders[0],
       projectName,
