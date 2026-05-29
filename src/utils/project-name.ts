@@ -1,5 +1,6 @@
 import { homedir } from 'os'
 import path from 'path';
+import fs from 'fs';
 import { logger } from './logger.js';
 import { detectWorktree } from './worktree.js';
 
@@ -38,6 +39,56 @@ export function getProjectName(cwd: string | null | undefined): string {
   return basename;
 }
 
+/**
+ * Cowork (local-agent-mode) sandbox detection.
+ *
+ * When Claude runs in cowork / local-agent mode the hook receives a cwd like:
+ *   /Users/x/Library/Application Support/Claude/local-agent-mode-sessions/<u1>/<u2>/local_<u3>/outputs
+ *
+ * The sibling state file `local_<u3>.json` holds `userSelectedFolders` — the
+ * real project folders the user opened. We derive the project name from there
+ * rather than from the meaningless "outputs" basename.
+ */
+const COWORK_REGEX = /^(.*\/local-agent-mode-sessions\/.+\/local_[^/]+)\/outputs(?:\/.*)?$/;
+
+interface CoworkResolution {
+  projectName: string;
+  stateFilePath: string;
+}
+
+function resolveCoworkProject(cwd: string): CoworkResolution | null {
+  const match = COWORK_REGEX.exec(cwd);
+  if (!match) return null;
+
+  const sessionPrefix = match[1]; // e.g. …/local_<u3>
+  const stateFilePath = `${sessionPrefix}.json`;
+
+  try {
+    const raw = fs.readFileSync(stateFilePath, 'utf8');
+    const state = JSON.parse(raw) as Record<string, unknown>;
+
+    const folders = state['userSelectedFolders'];
+    if (!Array.isArray(folders) || folders.length === 0) {
+      logger.debug('PROJECT_NAME', 'Cowork state file has no userSelectedFolders, falling back', { stateFilePath });
+      return null;
+    }
+
+    const projectName = path.basename(String(folders[0]));
+    logger.info('PROJECT_NAME', 'Resolved cowork project from userSelectedFolders', {
+      stateFilePath,
+      folder: folders[0],
+      projectName,
+    });
+    return { projectName, stateFilePath };
+  } catch (err) {
+    logger.debug('PROJECT_NAME', 'Could not read cowork state file, falling back', {
+      stateFilePath,
+      error: String(err),
+    });
+    return null;
+  }
+}
+
 export interface ProjectContext {
   primary: string;
   parent: string | null;
@@ -46,6 +97,16 @@ export interface ProjectContext {
 }
 
 export function getProjectContext(cwd: string | null | undefined): ProjectContext {
+  // Cowork sandbox detection — must run before the regular basename/worktree path.
+  if (cwd) {
+    const expanded = expandTilde(cwd);
+    const cowork = resolveCoworkProject(expanded);
+    if (cowork) {
+      const { projectName } = cowork;
+      return { primary: projectName, parent: null, isWorktree: false, allProjects: [projectName] };
+    }
+  }
+
   const cwdProjectName = getProjectName(cwd);
 
   if (!cwd) {
