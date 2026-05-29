@@ -14,6 +14,7 @@ function stripCodeFences(text: string): string {
 
 export interface ParsedObservation {
   type: string;
+  tool_name: string | null;
   title: string | null;
   subtitle: string | null;
   facts: string[];
@@ -94,6 +95,7 @@ function parseObservationBlocks(text: string, correlationId?: string | number): 
     const obsContent = match[1];
 
     const type = extractField(obsContent, 'type');
+    const tool_name = extractField(obsContent, 'tool_name');
     const title = extractField(obsContent, 'title');
     const subtitle = extractField(obsContent, 'subtitle');
     const narrative = extractField(obsContent, 'narrative');
@@ -137,6 +139,7 @@ function parseObservationBlocks(text: string, correlationId?: string | number): 
 
     observations.push({
       type: finalType,
+      tool_name: tool_name ? tool_name.trim() : null,
       title,
       subtitle,
       facts,
