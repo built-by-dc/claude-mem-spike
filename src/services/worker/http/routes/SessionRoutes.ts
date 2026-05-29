@@ -192,6 +192,11 @@ export class SessionRoutes extends BaseRouteHandler {
       validateBody(SessionRoutes.summarizeByClaudeIdSchema),
       this.handleSummarizeByClaudeId.bind(this)
     );
+    app.post(
+      '/api/sessions/backfill-project',
+      validateBody(SessionRoutes.backfillProjectSchema),
+      this.handleBackfillProject.bind(this)
+    );
     app.get('/api/sessions/status', this.handleStatusByClaudeId.bind(this));
   }
 
@@ -202,6 +207,22 @@ export class SessionRoutes extends BaseRouteHandler {
     platformSource: z.string().optional(),
     customTitle: z.string().optional(),
   }).passthrough();
+
+  private static readonly backfillProjectSchema = z.object({
+    contentSessionId: z.string().min(1),
+    project: z.string().min(1),
+  }).passthrough();
+
+  /**
+   * Cowork race fix (TEH-563): correct a session whose project was stamped with
+   * the "outputs" fallback because the sandbox state JSON didn't exist yet at
+   * session-init. Called at Stop, when the state file is reliably present.
+   */
+  private handleBackfillProject = this.wrapHandler(async (req: Request, res: Response): Promise<void> => {
+    const { contentSessionId, project } = req.body;
+    const updated = this.dbManager.getSessionStore().backfillProject(contentSessionId, project);
+    res.json({ updated });
+  });
 
   private static readonly observationsByClaudeIdSchema = z.object({
     contentSessionId: z.string().min(1),
@@ -370,6 +391,11 @@ export class SessionRoutes extends BaseRouteHandler {
     const store = this.dbManager.getSessionStore();
 
     const sessionDbId = store.createSDKSession(contentSessionId, project, prompt, customTitle, platformSource);
+
+    // Cowork race fix (TEH-563): the sandbox session-state JSON is written after
+    // the first session-init, so the project is stamped "outputs" at creation.
+    // Once a later prompt resolves the real project, correct the stamped fallback.
+    store.backfillProject(contentSessionId, project);
 
     const dbSession = store.getSessionById(sessionDbId);
     const isNewSession = !dbSession?.memory_session_id;

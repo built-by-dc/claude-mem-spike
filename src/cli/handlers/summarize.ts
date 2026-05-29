@@ -7,6 +7,7 @@ import { stripMemoryTagsFromPrompt } from '../../utils/tag-stripping.js';
 import { HOOK_EXIT_CODES } from '../../shared/hook-constants.js';
 import { normalizePlatformSource } from '../../shared/platform-source.js';
 import { shouldTrackProject } from '../../shared/should-track-project.js';
+import { getProjectContext } from '../../utils/project-name.js';
 import { resolveRuntimeContext, logServerBetaFallback } from '../../services/hooks/runtime-selector.js';
 import { isServerBetaClientError } from '../../services/hooks/server-beta-client.js';
 
@@ -37,6 +38,25 @@ export const summarizeHandler: EventHandler = {
     if (!sessionId) {
       logger.warn('HOOK', 'summarize: No sessionId provided, skipping');
       return { continue: true, suppressOutput: true, exitCode: HOOK_EXIT_CODES.SUCCESS };
+    }
+
+    // Cowork race fix (TEH-563): at Stop the sandbox session-state JSON exists,
+    // so getProjectContext resolves the real project even for short sessions
+    // whose prompts all predated the file. Backfill any "outputs" fallback that
+    // was stamped at session-init. Best-effort; never blocks the summary.
+    if (input.cwd) {
+      try {
+        const resolvedProject = getProjectContext(input.cwd).primary;
+        await executeWithWorkerFallback('/api/sessions/backfill-project', 'POST', {
+          contentSessionId: sessionId,
+          project: resolvedProject,
+        });
+      } catch (err) {
+        logger.debug('HOOK', 'summarize: project backfill skipped', {
+          sessionId,
+          error: err instanceof Error ? err.message : String(err),
+        });
+      }
     }
 
     let lastAssistantMessage = '';

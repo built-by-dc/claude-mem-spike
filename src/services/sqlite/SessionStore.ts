@@ -1577,6 +1577,62 @@ export class SessionStore {
     };
   }
 
+  /**
+   * Project values that are non-specific fallbacks, safe to override once a
+   * better project is resolved. "outputs" is the cowork sandbox basename
+   * (see project-name.ts): in cowork the session-state JSON with
+   * userSelectedFolders is written AFTER session-init runs, so the project is
+   * stamped "outputs" at creation and corrected only once the file exists.
+   */
+  private static readonly FALLBACK_PROJECTS = new Set([
+    'outputs',
+    'unknown',
+    'unknown-project',
+  ]);
+
+  /**
+   * Correct a previously-stamped fallback project once the real project is
+   * resolved (cowork race fix). Updates sdk_sessions.project AND retags the
+   * observations/summaries that inherited the fallback. No-ops unless the
+   * stored value is a known fallback, the resolved value is NOT a fallback,
+   * and they differ — so a real project name is never clobbered.
+   *
+   * @returns true if a backfill update was applied.
+   */
+  backfillProject(contentSessionId: string, resolvedProject: string): boolean {
+    if (!resolvedProject || SessionStore.FALLBACK_PROJECTS.has(resolvedProject)) {
+      return false;
+    }
+    const row = this.db.prepare(
+      'SELECT memory_session_id, project FROM sdk_sessions WHERE content_session_id = ?'
+    ).get(contentSessionId) as { memory_session_id: string | null; project: string } | undefined;
+
+    if (!row) return false;
+    if (row.project === resolvedProject) return false;
+    if (!SessionStore.FALLBACK_PROJECTS.has(row.project)) return false;
+
+    const stale = row.project;
+    this.db.prepare(
+      'UPDATE sdk_sessions SET project = ? WHERE content_session_id = ?'
+    ).run(resolvedProject, contentSessionId);
+
+    if (row.memory_session_id) {
+      this.db.prepare(
+        'UPDATE observations SET project = ? WHERE memory_session_id = ? AND project = ?'
+      ).run(resolvedProject, row.memory_session_id, stale);
+      this.db.prepare(
+        'UPDATE session_summaries SET project = ? WHERE memory_session_id = ? AND project = ?'
+      ).run(resolvedProject, row.memory_session_id, stale);
+    }
+
+    logger.info('PROJECT_NAME', 'Backfilled cowork fallback project', {
+      contentSessionId,
+      from: stale,
+      to: resolvedProject,
+    });
+    return true;
+  }
+
   getSessionById(id: number): {
     id: number;
     content_session_id: string;
